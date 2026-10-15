@@ -121,13 +121,12 @@ def значок_игрока(uid):
 
 # ============ СПИСОК ЧАТА ============
 def кнопки_списка(chat_id):
-    url = f"https://t.me/{BOT_USERNAME}?start=reg_{chat_id}"
     return kb([
-        [("📝 Зарегистрироваться", url)],
+        [("📝 Зарегистрироваться", "reg_me")],
         [("👥 Список участников", "refresh")],
         [("🏆 Топ недели", "top")],
-        [("🌍 Топ за всё время", "top_all")],
-        [("👤 Мой профиль", "profile")],
+        [("🌍 Топ за всё время", "top_all")],
+        [("👤 Мой профиль", "profile")],
         [("⚔ Дуэль", "duel")],
         [("❓ Помощь", "help")]
     ])
@@ -568,6 +567,20 @@ while True:
                 if act == "begin":
                     answer_cb(cb["id"], "🚀 Поехали!")
                     send(chat_id, "💌 Меню:", кнопки_списка(chat_id))
+                elif act == "reg_me":
+                    u = получить_юзера(uid)
+                    if not u.get("имя"):
+                        answer_cb(cb["id"], f"📝 Сначала напиши мне в личку: @{BOT_USERNAME}\n\nНажми там /start и введи имя.", alert=True)
+                    else:
+                        answer_cb(cb["id"], "✅ Зарегистрирован!")
+                        c = получить_чат(chat_id)
+                        c["игроки"][str(uid)] = u["имя"]
+                        if chat_id not in u["чаты"]:
+                            u["чаты"].append(chat_id)
+                        save()
+                        send(chat_id, f"✅ {u['имя']} зарегистрирован в этом чате!")
+                        обновить_список(chat_id)
+                    continue
                 elif act == "refresh":
                     answer_cb(cb["id"], "🔄 Обновляю...")
                     send(chat_id, "📋 Список участников:\n\n" + текст_списка(chat_id), кнопки_списка(chat_id))
