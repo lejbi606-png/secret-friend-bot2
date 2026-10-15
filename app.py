@@ -1,4 +1,6 @@
 import requests
+import http.server
+import socketserver
 import time
 import json
 import os
@@ -517,6 +519,24 @@ def обработка_группы(chat_id, uid, text):
 load()
 me = api("getMe", {})
 BOT_USERNAME = me.get("result", {}).get("username", "")
+# ============ Веб-сервер для Render ============
+def запустить_веб_сервер():
+    port = int(os.environ.get("PORT", 10000))
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Bot is alive")
+        def log_message(self, *args):
+            pass
+    try:
+        with socketserver.TCPServer(("0.0.0.0", port), Handler) as httpd:
+            httpd.serve_forever()
+    except Exception as e:
+        print("Веб-сервер:", e)
+
+threading.Thread(target=запустить_веб_сервер, daemon=True).start()
 print(f"Бот запущен: @{BOT_USERNAME}")
 
 while True:
