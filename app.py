@@ -16,7 +16,7 @@ ADMIN_PASSWORD = "12345"
 
 users_reg = {}   # {uid: {"имя": ..., "очки": ..., "чаты": [chat_id, ...]}}
 чаты = {}        # {chat_id: {...}}
-BOT_USERNAME = ""
+BOT_USERNAME = "Tajnij_dryg_bot"
 
 КОМПЛИМЕНТЫ = [
     "Ты сегодня просто огонь", "С тобой всегда весело", "Ты очень умный, не забывай об этом",
@@ -517,8 +517,6 @@ def обработка_группы(chat_id, uid, text):
 
 # ============ ЗАПУСК ============
 load()
-me = api("getMe", {})
-BOT_USERNAME = me.get("result", {}).get("username", "")
 # ============ Веб-сервер для Render ============
 def запустить_веб_сервер():
     port = int(os.environ.get("PORT", 10000))
