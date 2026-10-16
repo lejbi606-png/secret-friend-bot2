@@ -39,11 +39,9 @@ users_reg = {}
     "С тобой я чувствую себя собой", "Ты — лучший!",
 ]
 
-# ============ ЦЕНЫ В ЗВЁЗДАХ ============
 ЦЕНА_ЦВЕТ_ИМЯ = 1
 ЦЕНА_УЗНАТЬ_АВТОРА = 15
-
-ПОПОЛНЕНИЕ_ВАРИАНТЫ = [10, 50, 100]  # во сколько звёзд пополнить
+ПОПОЛНЕНИЕ_ВАРИАНТЫ = [10, 50, 100]
 
 # ============ TELEGRAM ============
 def api(method, payload):
@@ -67,7 +65,7 @@ def kb(rows):
     return {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in rows]}
 
 def отправить_счёт(chat_id, title, description, payload, stars):
-    r = api("sendInvoice", {
+    return api("sendInvoice", {
         "chat_id": chat_id,
         "title": title,
         "description": description,
@@ -75,9 +73,17 @@ def отправить_счёт(chat_id, title, description, payload, stars):
         "currency": "XTR",
         "prices": [{"label": title, "amount": stars}]
     })
-    if not r.get("ok"):
-        print("invoice FAIL:", r)
-    return r
+
+# ============ КНОПКА ДОБАВЛЕНИЯ В ЧАТ ============
+def кнопка_добавления():
+    """Возвращает клавиатуру с ДВУМЯ кнопками:
+    1. tg:// ссылка (работает на iPhone чаще чем https)
+    2. copy_text — копирует username бота, чтобы вставить в поиск группы"""
+    return {"inline_keyboard": [
+        [{"text": "➕ Добавить в чат (кнопка)", "url": "tg://resolve?domain=" + BOT_USERNAME + "&startgroup=true"}],
+        [{"text": "📋 Скопировать @username", "copy_text": {"text": "@" + BOT_USERNAME}}],
+        [{"text": "❓ Как добавить вручную", "callback_data": "howto_add"}]
+    ]}
 
 # ============ ЗАГРУЗКА ============
 def load():
@@ -240,7 +246,6 @@ def обновить_список(chat_id):
 
 # ============ МАГАЗИН ============
 def кнопки_магазина(uid):
-    u = получить_юзера(uid)
     return kb([
         [("💳 Пополнить баланс", "topup_menu")],
         [("🌈 Цветное имя — " + str(ЦЕНА_ЦВЕТ_ИМЯ) + "⭐", "buy_color")],
@@ -251,7 +256,7 @@ def кнопки_магазина(uid):
 def кнопки_пополнения():
     rows = []
     for сумма in ПОПОЛНЕНИЕ_ВАРИАНТЫ:
-        rows.append([{"text": "+" + str(сумма) + "⭐ за " + str(сумма) + "⭐", "callback_data": "topup_" + str(сумма)}])
+        rows.append([{"text": "+" + str(сумма) + "⭐", "callback_data": "topup_" + str(сумма)}])
     rows.append([{"text": "⬅ Назад", "callback_data": "shop"}])
     return {"inline_keyboard": rows}
 
@@ -265,14 +270,13 @@ def текст_магазина(uid):
             "🔓 Узнать автора — " + str(ЦЕНА_УЗНАТЬ_АВТОРА) + "⭐\n"
             "Мгновенно раскроет, кто отправил комплимент.\n"
             "━━━━━━━━━━━━━━\n\n"
-            "💳 Пополни баланс звёздами Telegram.\n"
-            "Оплата — Telegram Stars.")
+            "💳 Пополни баланс звёздами Telegram.")
 
 def текст_пополнения(uid):
     u = получить_юзера(uid)
     return ("💳 ПОПОЛНЕНИЕ БАЛАНСА\n\n"
             "💰 Сейчас: " + str(u.get("balance", 0)) + "⭐\n\n"
-            "Выбери сумму пополнения:")
+            "Выбери сумму:")
 
 # ============ КОМПЛИМЕНТ ============
 def кнопки_выбора_жертвы(chat_id, uid):
@@ -355,12 +359,10 @@ admin_session = {}
 
 def админ_меню(uid):
     счёт = len([u for u in users_reg.values() if u.get("имя")])
-    общий_баланс = sum(u.get("balance", 0) for u in users_reg.values())
     send(uid,
          "👑 АДМИН-МЕНЮ\n\n"
          "👥 Зарегистрировано: " + str(счёт) + "\n"
-         "💬 Чатов: " + str(len(чаты)) + "\n"
-         "💰 Общий баланс юзеров: " + str(общий_баланс) + "⭐\n\n"
+         "💬 Чатов: " + str(len(чаты)) + "\n\n"
          "Действия:",
          {"inline_keyboard": [
              [{"text": "📊 Все пользователи", "callback_data": "admin_users"}],
@@ -399,11 +401,12 @@ def обработка_лички(uid, text, payload=None):
             send(uid,
                  "✅ Отлично, " + имя + "!\n\n"
                  "🎯 Что дальше:\n"
-                 "1️⃣ Добавь меня в чат с друзьями\n"
+                 "1️⃣ Добавь меня в чат\n"
                  "2️⃣ Кто-то пишет /start в чате\n"
                  "3️⃣ Жми «Зарегистрироваться» — и играй!\n\n"
-                 "👥 Всего в боте: " + str(счёт) + " чел.",
-                 kb([[("➕ Добавить в чат", "https://t.me/" + BOT_USERNAME + "?startgroup=true")]]))
+                 "👥 Всего в боте: " + str(счёт) + " чел.\n\n"
+                 "👇 Добавь меня в чат (два способа):",
+                 кнопка_добавления())
             return
 
     if low == "/admin":
@@ -428,6 +431,10 @@ def обработка_лички(uid, text, payload=None):
         send(uid, текст_магазина(uid), кнопки_магазина(uid))
         return
 
+    if low == "/chatid":
+        send(uid, "🆔 Мой chat_id: " + str(uid))
+        return
+
     if low == "/start" and not payload:
         счёт = len([x for x in users_reg.values() if x.get("имя")])
         send(uid,
@@ -441,7 +448,7 @@ def обработка_лички(uid, text, payload=None):
              "💰 Баланс: " + str(u.get("balance", 0)) + "⭐\n"
              "👥 Всего в боте: " + str(счёт) + " чел.\n\n"
              "👇 Добавь меня в чат:",
-             kb([[("➕ Добавить в чат", "https://t.me/" + BOT_USERNAME + "?startgroup=true")]]))
+             кнопка_добавления())
         return
 
     if low == "/guess":
@@ -502,7 +509,7 @@ def обработка_лички(uid, text, payload=None):
         return
 
     if low == "/help":
-        send(uid, "📖 Команды:\n\nВ чате: кнопки в меню\n\nВ личке:\n• /guess — угадать автора\n• /shop — магазин\n• /admin — админка")
+        send(uid, "📖 Команды:\n\nВ чате: кнопки в меню\n\nВ личке:\n• /guess — угадать автора\n• /shop — магазин\n• /admin — админка\n• /chatid — узнать свой ID")
         return
 
     send(uid, "Не понял. /start")
@@ -521,6 +528,10 @@ def обработка_группы(chat_id, uid, text):
 
     if low == "/send_comp":
         send(chat_id, "💌 Жми кнопку:", кнопки_списка(chat_id))
+        return
+
+    if low == "/chatid":
+        send(chat_id, "🆔 chat_id этой группы: " + str(chat_id))
         return
 
     if low.startswith("/duel"):
@@ -567,7 +578,6 @@ def запустить_веб_сервер():
 def обработать_оплату(uid, payload, chat_id=None):
     u = получить_юзера(uid)
 
-    # --- Пополнение баланса ---
     if payload.startswith("topup_"):
         try:
             сумма = int(payload.replace("topup_", ""))
@@ -575,36 +585,29 @@ def обработать_оплату(uid, payload, chat_id=None):
             сумма = 0
         if сумма > 0:
             u["balance"] = u.get("balance", 0) + сумма
-            u["звёзд_потрачено"] = u.get("звёзд_потрачено", 0) + сумма
             save()
             send(uid, "✅ Баланс пополнен на " + str(сумма) + "⭐\n\n"
-                      "💰 Текущий баланс: " + str(u["balance"]) + "⭐")
+                      "💰 Текущий: " + str(u["balance"]) + "⭐")
         return
 
-    # --- Покупка: цветное имя ---
     if payload == "buy_color":
         if u.get("balance", 0) < ЦЕНА_ЦВЕТ_ИМЯ:
-            send(uid, "❌ Не хватает звёзд на балансе. Пополни через /shop")
-            return
+            send(uid, "❌ Не хватает звёзд."); return
         if u.get("цветное_имя"):
-            send(uid, "❌ У тебя уже есть цветное имя.")
-            return
-        u["balance"] = u.get("balance", 0) - ЦЕНА_ЦВЕТ_ИМЯ
+            send(uid, "❌ Уже есть."); return
+        u["balance"] -= ЦЕНА_ЦВЕТ_ИМЯ
         u["цветное_имя"] = True
         save()
-        send(uid, "✅ Цветное имя активировано!\n\n"
-                  "💰 Осталось: " + str(u["balance"]) + "⭐")
+        send(uid, "✅ Цветное имя активировано!")
         for cid_s in u.get("чаты", []):
             try: обновить_список(int(cid_s))
             except: pass
         return
 
-    # --- Покупка: узнать автора ---
     if payload == "buy_reveal":
         if u.get("balance", 0) < ЦЕНА_УЗНАТЬ_АВТОРА:
-            send(uid, "❌ Не хватает звёзд на балансе. Пополни через /shop")
-            return
-        u["balance"] = u.get("balance", 0) - ЦЕНА_УЗНАТЬ_АВТОРА
+            send(uid, "❌ Не хватает звёзд."); return
+        u["balance"] -= ЦЕНА_УЗНАТЬ_АВТОРА
         save()
         найдено = False
         for cid_s in u.get("чаты", []):
@@ -614,20 +617,16 @@ def обработать_оплату(uid, payload, chat_id=None):
             for h in reversed(история):
                 if not h.get("угадано"):
                     авт = users_reg.get(h["от"], {}).get("имя", "???")
-                    send(uid, "🔓 Автор последнего комплимента: " + авт +
-                              "\n\n💌 Текст: «" + h["текст"] + "»\n\n"
-                              "💰 Осталось: " + str(u["balance"]) + "⭐")
+                    send(uid, "🔓 Автор: " + авт + "\n\n💌 «" + h["текст"] + "»")
                     h["угадано"] = True
                     save()
                     найдено = True
                     break
             if найдено: break
         if not найдено:
-            # Вернём звёзды, если нечего раскрывать
-            u["balance"] = u.get("balance", 0) + ЦЕНА_УЗНАТЬ_АВТОРА
+            u["balance"] += ЦЕНА_УЗНАТЬ_АВТОРА
             save()
-            send(uid, "❌ У тебя нет неразгаданных комплиментов. Звёзды возвращены.")
-        return
+            send(uid, "❌ Нет неразгаданных. Звёзды возвращены.")
 
 # ============ ЗАПУСК ============
 load()
@@ -642,9 +641,7 @@ while True:
                          timeout=25)
         data = r.json()
         if not data.get("ok"):
-            print("Err:", data)
-            time.sleep(2)
-            continue
+            print("Err:", data); time.sleep(2); continue
 
         for upd in data["result"]:
             offset = upd["update_id"] + 1
@@ -662,6 +659,7 @@ while True:
                 if chat_id < 0 and new_status in ("member", "administrator"):
                     получить_чат(chat_id)
                     save()
+                    print("[НОВЫЙ ЧАТ] " + str(chat_id))
                     send(chat_id,
                          "👋 Привет, ребята!\n\nЯ — Тайный Друг 🎭\n"
                          "🎯 Цель: стать «Душой компании».\n\n👇 Жми Старт:",
@@ -676,8 +674,23 @@ while True:
                 u = получить_юзера(uid)
 
                 if act == "begin":
-                    answer_cb(cb["id"], "🚀 Поехали!")
+                    answer_cb(cb["id"], "🚀")
                     send(chat_id, "💌 Меню:", кнопки_списка(chat_id))
+
+                elif act == "howto_add":
+                    answer_cb(cb["id"])
+                    send(uid,
+                         "📖 КАК ДОБАВИТЬ БОТА В ЧАТ\n\n"
+                         "Способ 1 (кнопка):\n"
+                         "• Жми «➕ Добавить в чат (кнопка)»\n"
+                         "• Выбери группу\n\n"
+                         "Способ 2 (вручную):\n"
+                         "• Открой группу → название → Управление → Участники → Добавить\n"
+                         "• Введи: @" + BOT_USERNAME + "\n\n"
+                         "Способ 3 (копирование):\n"
+                         "• Жми «📋 Скопировать @username»\n"
+                         "• Вставь в поиск Telegram\n\n"
+                         "⚠️ Без добавления в чат регистрация не сработает!")
 
                 elif act == "reg_me":
                     if not u.get("имя"):
@@ -694,14 +707,14 @@ while True:
 
                 elif act == "send_comp":
                     if not u.get("имя"):
-                        answer_cb(cb["id"], "📝 Сначала напиши мне в личку @" + BOT_USERNAME + " и введи имя.", alert=True)
+                        answer_cb(cb["id"], "📝 Сначала /start в личке.", alert=True)
                     elif str(uid) not in c["игроки"]:
                         answer_cb(cb["id"], "❌ Сначала зарегистрируйся!", alert=True)
                     else:
                         клав = кнопки_выбора_жертвы(chat_id, uid)
                         if клав:
                             answer_cb(cb["id"], "💌 Лови в личке!")
-                            send(uid, "💌 Кому отправить комплимент в чате?", клав)
+                            send(uid, "💌 Кому отправить комплимент?", клав)
                         else:
                             answer_cb(cb["id"], "Нет других участников", alert=True)
 
@@ -733,9 +746,8 @@ while True:
                     u["_wait_own"] = {"chat": real_chat, "to": target_uid}
                     save()
                     имя_цели = чаты[real_chat]["игроки"].get(str(target_uid), "???")
-                    send(uid, "✍️ Напиши свой комплимент для " + имя_цели + ":")
+                    send(uid, "✍️ Напиши комплимент для " + имя_цели + ":")
 
-                # === МАГАЗИН ===
                 elif act == "shop":
                     answer_cb(cb["id"])
                     send(uid, текст_магазина(uid), кнопки_магазина(uid))
@@ -746,38 +758,32 @@ while True:
                     answer_cb(cb["id"])
                     send(uid, текст_пополнения(uid), кнопки_пополнения())
                 elif act.startswith("topup_"):
-                    # topup_10 / topup_50 / topup_100
                     answer_cb(cb["id"])
-                    try:
-                        сумма = int(act.replace("topup_", ""))
-                    except:
-                        сумма = 10
-                    отправить_счёт(uid,
-                                   "💰 Пополнение баланса",
-                                   "Зачисление " + str(сумма) + " звёзд на баланс в боте",
-                                   "topup_" + str(сумма),
-                                   сумма)
+                    try: сумма = int(act.replace("topup_", ""))
+                    except: сумма = 10
+                    отправить_счёт(uid, "💰 Пополнение",
+                                   "Зачисление " + str(сумма) + " звёзд",
+                                   "topup_" + str(сумма), сумма)
                 elif act == "buy_color":
                     answer_cb(cb["id"])
                     if u.get("цветное_имя"):
-                        send(uid, "❌ У тебя уже есть цветное имя.")
+                        send(uid, "❌ Уже есть.")
                     elif u.get("balance", 0) < ЦЕНА_ЦВЕТ_ИМЯ:
-                        send(uid, "❌ Не хватает звёзд на балансе (" + str(u.get("balance", 0)) + "⭐). Пополни через /shop")
+                        send(uid, "❌ Не хватает звёзд (" + str(u.get("balance", 0)) + "⭐). /shop")
                     else:
-                        # Оплата с баланса — без счёта
-                        u["balance"] = u["balance"] - ЦЕНА_ЦВЕТ_ИМЯ
+                        u["balance"] -= ЦЕНА_ЦВЕТ_ИМЯ
                         u["цветное_имя"] = True
                         save()
-                        send(uid, "✅ Цветное имя активировано!\n\n💰 Осталось: " + str(u["balance"]) + "⭐")
+                        send(uid, "✅ Цветное имя активировано! Осталось: " + str(u["balance"]) + "⭐")
                         for cid_s in u.get("чаты", []):
                             try: обновить_список(int(cid_s))
                             except: pass
                 elif act == "buy_reveal":
                     answer_cb(cb["id"])
                     if u.get("balance", 0) < ЦЕНА_УЗНАТЬ_АВТОРА:
-                        send(uid, "❌ Не хватает звёзд на балансе (" + str(u.get("balance", 0)) + "⭐). Пополни через /shop")
+                        send(uid, "❌ Не хватает звёзд (" + str(u.get("balance", 0)) + "⭐). /shop")
                     else:
-                        u["balance"] = u["balance"] - ЦЕНА_УЗНАТЬ_АВТОРА
+                        u["balance"] -= ЦЕНА_УЗНАТЬ_АВТОРА
                         save()
                         найдено = False
                         for cid_s in u.get("чаты", []):
@@ -787,34 +793,28 @@ while True:
                             for h in reversed(история):
                                 if not h.get("угадано"):
                                     авт = users_reg.get(h["от"], {}).get("имя", "???")
-                                    send(uid, "🔓 Автор последнего комплимента: " + авт +
-                                              "\n\n💌 Текст: «" + h["текст"] + "»\n\n"
-                                              "💰 Осталось: " + str(u["balance"]) + "⭐")
+                                    send(uid, "🔓 Автор: " + авт + "\n\n💌 «" + h["текст"] + "»")
                                     h["угадано"] = True
                                     save()
                                     найдено = True
                                     break
                             if найдено: break
                         if not найдено:
-                            u["balance"] = u["balance"] + ЦЕНА_УЗНАТЬ_АВТОРА
+                            u["balance"] += ЦЕНА_УЗНАТЬ_АВТОРА
                             save()
-                            send(uid, "❌ У тебя нет неразгаданных комплиментов. Звёзды возвращены.")
+                            send(uid, "❌ Нет неразгаданных. Возврат.")
 
                 elif act == "refresh":
                     answer_cb(cb["id"], "🔄")
-                    send(chat_id, "📋 Список участников:\n\n" + текст_списка(chat_id), кнопки_списка(chat_id))
+                    send(chat_id, "📋 Список:\n\n" + текст_списка(chat_id), кнопки_списка(chat_id))
                 elif act == "top":
-                    answer_cb(cb["id"])
-                    send(chat_id, топ_текст(chat_id))
+                    answer_cb(cb["id"]); send(chat_id, топ_текст(chat_id))
                 elif act == "top_all":
-                    answer_cb(cb["id"])
-                    send(chat_id, топ_всё_время(chat_id))
+                    answer_cb(cb["id"]); send(chat_id, топ_всё_время(chat_id))
                 elif act == "profile":
-                    answer_cb(cb["id"])
-                    send(chat_id, профиль_текст(uid))
+                    answer_cb(cb["id"]); send(chat_id, профиль_текст(uid))
                 elif act == "duel":
-                    answer_cb(cb["id"])
-                    send(chat_id, "⚔ Напиши: /duel Имя")
+                    answer_cb(cb["id"]); send(chat_id, "⚔ /duel Имя")
                 elif act == "help":
                     answer_cb(cb["id"])
                     send(chat_id, "📖 Как играть:\n1. Зарегистрируйся\n2. Отправляй комплименты\n3. Угадывай автора /guess\n4. Соревнуйся в топах\n\n💎 Магазин — /shop")
@@ -827,7 +827,7 @@ while True:
                         send(uid, "Никто не зарегистрирован."); continue
                     s = "👥 Всего: " + str(len(люди)) + "\n\n"
                     for i, (uu_id, uu) in enumerate(люди[:30], 1):
-                        s += str(i) + ". " + uu["имя"] + " — " + str(uu.get("очки_всего", 0)) + " очк."
+                        s += str(i) + ". " + uu["имя"]
                         if uu.get("balance", 0) > 0:
                             s += " 💰" + str(uu["balance"]) + "⭐"
                         s += "\n"
@@ -850,24 +850,23 @@ while True:
                     rows = []
                     for uu_id, uu in люди[:20]:
                         rows.append([{"text": uu["имя"], "callback_data": "pickuser_" + str(uu_id)}])
-                    send(uid, "Кому выдать значок?", {"inline_keyboard": rows})
+                    send(uid, "Кому значок?", {"inline_keyboard": rows})
                 elif act.startswith("pickuser_"):
                     answer_cb(cb["id"])
                     if not admin_session.get(uid): continue
                     target_uid = act.replace("pickuser_", "")
                     имя = users_reg.get(int(target_uid), {}).get("имя", "???")
-                    send(uid, "Выбери значок для " + имя + ":", меню_значков(target_uid))
+                    send(uid, "Значок для " + имя + ":", меню_значков(target_uid))
                 elif act.startswith("seticon_"):
                     parts = act.split("_")
-                    значок = parts[1]
-                    target_uid = parts[2]
+                    значок = parts[1]; target_uid = parts[2]
                     if not admin_session.get(uid): continue
                     found = False
                     for cid, c in чаты.items():
                         if target_uid in c["игроки"]:
                             if значок == "❌":
                                 c["значки"].pop(target_uid, None)
-                                send(uid, "✅ Значок убран.")
+                                send(uid, "✅ Убран.")
                             else:
                                 c["значки"][target_uid] = значок
                                 send(uid, "✅ " + значок + " выдан " + c["игроки"][target_uid] + "!")
@@ -879,11 +878,9 @@ while True:
                     save()
                     админ_меню(uid)
                 elif act == "admin_back":
-                    answer_cb(cb["id"])
-                    админ_меню(uid)
+                    answer_cb(cb["id"]); админ_меню(uid)
                 elif act == "admin_close":
-                    answer_cb(cb["id"], "Закрыто")
-                    admin_session.pop(uid, None)
+                    answer_cb(cb["id"], "Закрыто"); admin_session.pop(uid, None)
                 else:
                     answer_cb(cb["id"])
                 continue
@@ -912,5 +909,4 @@ while True:
                     обработка_группы(chat_id, uid, text)
 
     except Exception as e:
-        print("Ошибка:", e)
-        time.sleep(3)
+        print("Ошибка:", e); time.sleep(3)
