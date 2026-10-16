@@ -383,7 +383,7 @@ def меню_значков(target_uid):
 
 # ============ ЛИЧКА ============
 def обработка_лички(uid, text, payload=None):
-   low = text.strip().lower()
+       low = text.strip().lower()
    u = получить_юзера(uid)
     if low == "/reset":
         u["имя"] = None
