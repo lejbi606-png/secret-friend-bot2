@@ -383,14 +383,14 @@ def меню_значков(target_uid):
 
 # ============ ЛИЧКА ============
 def обработка_лички(uid, text, payload=None):
-    low = text.strip().lower()
+   low = text.strip().lower()
     u = получить_юзера(uid)
-if low == "/reset":
+    if low == "/reset":
         u["имя"] = None
         save()
         send(uid, "✅ Сброшено. Напиши /start заново.")
         return
-    
+
     if u.get("имя") is None:
         if low == "/start" or payload:
             send(uid,
