@@ -7,7 +7,7 @@ import threading
 import http.server
 import socketserver
 
-TOKEN = ""
+TOKEN = "8918941174:AAFF0ghZGawj5I2YN_Epbjbvu4LICbiodW0"
 API = "https://api.telegram.org/bot" + TOKEN
 SAVE_FILE = "secret_friend.json"
 offset = 0
