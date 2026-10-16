@@ -73,7 +73,7 @@ def отправить_счёт(chat_id, title, description, payload, stars):
         "prices": [{"label": title, "amount": stars}]
     })
 
-def кнопка_добавления():
+def кнопка_добавления(uid):
     return {"inline_keyboard": [
         [{"text": "➕ Добавить в чат (кнопка)", "url": "tg://resolve?domain=" + BOT_USERNAME + "&startgroup=true"}],
         [{"text": "📋 Скопировать @username", "copy_text": {"text": "@" + BOT_USERNAME}}],
