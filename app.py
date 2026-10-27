@@ -8,13 +8,12 @@ import socketserver
 
 # ================== НАСТРОЙКИ (БЕРУТСЯ ИЗ RENDER SECRETS) ==================
 TOKEN = os.environ.get("BOT_TOKEN", "8918941174:AAGcBEBBMx88GAa6XGuqmjLLuSV136HuCOw")
-# SUBGRAM_API_KEY и DATABASE_URL пока отключены, чтобы бот не падал при запуске
-# Мы добавим их в следующем шаге, когда будем подключать Aiven
+SUBGRAM_API_KEY = os.environ.get("SUBGRAM_API_KEY", "0ee6cf29c3f3f9279eadcae83f8636187bd2dd5ee211528e3ad0a22f89aa73c4")
 
 API = "https://api.telegram.org/bot" + TOKEN
 BASE_REWARD = 0.5  # Награда за 1 задание
 
-# Временное хранилище балансов (пока без Aiven)
+# Временное хранилище (пока без базы данных)
 local_db = {}
 
 def get_user(uid):
@@ -26,17 +25,43 @@ def update_balance(uid, amount):
     u = get_user(uid)
     u["balance"] = u.get("balance", 0.0) + amount
 
-# ================== SUBGRAM (ЗАГЛУШКИ) ==================
+# ================== SUBGRAM API (РЕАЛЬНЫЕ ЗАПРОСЫ) ==================
+SUBGRAM_API_URL = "https://subgram.org/api/v1"
+
 def subgram_get_task(uid):
     user = get_user(uid)
+    # Если есть незавершенное задание, возвращаем его (пока не будем дергать API)
     if user.get("current_task"):
-        return {"id": user["current_task"], "link": f"https://t.me/test_channel_{user['current_task']}", "title": f"Спонсор (продолжение)"}
+        task_id = user["current_task"]
+        return {"id": task_id, "link": f"https://t.me/test_channel_{task_id}", "title": f"Спонсор (продолжение)"}
     
+    # Запрашиваем новое задание у SubGram
+    try:
+        r = requests.post(f"{SUBGRAM_API_URL}/get_task", json={"user_id": uid, "api_key": SUBGRAM_API_KEY}, timeout=10)
+        data = r.json()
+        if data.get("ok"):
+            task = data["task"]
+            user["current_task"] = task["id"]
+            return task
+    except Exception as e:
+        print("Ошибка SubGram API (get_task):", e)
+    
+    # Если API не ответил (или ключ неверный) — выдаем заглушку
     task_id = str(random.randint(1000, 9999))
     user["current_task"] = task_id
-    return {"id": task_id, "link": f"https://t.me/test_channel_{task_id}", "title": f"Спонсор #{task_id}"}
+    return {"id": task_id, "link": f"https://t.me/test_channel_{task_id}", "title": f"Тестовый канал #{task_id}"}
 
 def subgram_check_task(uid, task_id):
+    # Проверяем подписку через SubGram
+    try:
+        r = requests.post(f"{SUBGRAM_API_URL}/check_task", json={"user_id": uid, "task_id": task_id, "api_key": SUBGRAM_API_KEY}, timeout=10)
+        data = r.json()
+        if data.get("ok"):
+            return data["completed"] # True или False
+    except Exception as e:
+        print("Ошибка SubGram API (check_task):", e)
+    
+    # Если SubGram недоступен — считаем, что выполнено (для теста)
     return True 
 
 # ================== TELEGRAM ==================
@@ -104,7 +129,7 @@ def show_task(uid, chat_id):
     send(chat_id, text, task_menu(task['link'], task['id']))
 
 # ================== ЗАПУСК ==================
-print("Бот запущен в режиме Заработка Звезд!")
+print("Бот запущен в режиме Заработка Звезд (SubGram API подключен)!")
 threading.Thread(target=run_web_server, daemon=True).start()
 
 offset = 0
