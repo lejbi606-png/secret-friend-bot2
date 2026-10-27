@@ -1,68 +1,41 @@
 import requests
 import time
 import os
-import random
 import threading
 import http.server
 import socketserver
 
-# ================== НАСТРОЙКИ (БЕРУТСЯ ИЗ RENDER SECRETS) ==================
+# ================== НАСТРОЙКИ ==================
 TOKEN = os.environ.get("BOT_TOKEN", "8918941174:AAGcBEBBMx88GAa6XGuqmjLLuSV136HuCOw")
 SUBGRAM_API_KEY = os.environ.get("SUBGRAM_API_KEY", "0ee6cf29c3f3f9279eadcae83f8636187bd2dd5ee211528e3ad0a22f89aa73c4")
-
 API = "https://api.telegram.org/bot" + TOKEN
-BASE_REWARD = 0.5  # Награда за 1 задание
+BASE_REWARD = 0.5
 
-# Временное хранилище (пока без базы данных)
+# Временное хранилище (пока без Aiven)
 local_db = {}
 
 def get_user(uid):
     if uid not in local_db:
-        local_db[uid] = {"balance": 0.0, "current_task": None}
+        local_db[uid] = {"balance": 0.0}
     return local_db[uid]
 
 def update_balance(uid, amount):
     u = get_user(uid)
     u["balance"] = u.get("balance", 0.0) + amount
 
-# ================== SUBGRAM API (РЕАЛЬНЫЕ ЗАПРОСЫ) ==================
-SUBGRAM_API_URL = "https://subgram.org/api/v1"
-
-def subgram_get_task(uid):
-    user = get_user(uid)
-    # Если есть незавершенное задание, возвращаем его (пока не будем дергать API)
-    if user.get("current_task"):
-        task_id = user["current_task"]
-        return {"id": task_id, "link": f"https://t.me/test_channel_{task_id}", "title": f"Спонсор (продолжение)"}
-    
-    # Запрашиваем новое задание у SubGram
+# ================== SUBGRAM API (РЕАЛЬНЫЙ) ==================
+def subgram_get_sponsors(uid, chat_id):
     try:
-        r = requests.post(f"{SUBGRAM_API_URL}/get_task", json={"user_id": uid, "api_key": SUBGRAM_API_KEY}, timeout=10)
-        data = r.json()
-        if data.get("ok"):
-            task = data["task"]
-            user["current_task"] = task["id"]
-            return task
+        r = requests.post(
+            "https://api.subgram.org/get-sponsors",
+            headers={"Auth": SUBGRAM_API_KEY},
+            json={"user_id": uid, "chat_id": chat_id},
+            timeout=15
+        )
+        return r.json()
     except Exception as e:
-        print("Ошибка SubGram API (get_task):", e)
-    
-    # Если API не ответил (или ключ неверный) — выдаем заглушку
-    task_id = str(random.randint(1000, 9999))
-    user["current_task"] = task_id
-    return {"id": task_id, "link": f"https://t.me/test_channel_{task_id}", "title": f"Тестовый канал #{task_id}"}
-
-def subgram_check_task(uid, task_id):
-    # Проверяем подписку через SubGram
-    try:
-        r = requests.post(f"{SUBGRAM_API_URL}/check_task", json={"user_id": uid, "task_id": task_id, "api_key": SUBGRAM_API_KEY}, timeout=10)
-        data = r.json()
-        if data.get("ok"):
-            return data["completed"] # True или False
-    except Exception as e:
-        print("Ошибка SubGram API (check_task):", e)
-    
-    # Если SubGram недоступен — считаем, что выполнено (для теста)
-    return True 
+        print("SubGram error:", e)
+        return {"status": "error"}
 
 # ================== TELEGRAM ==================
 def api(method, payload):
@@ -93,10 +66,9 @@ def main_menu():
         [("👤 Профиль", "profile")]
     ])
 
-def task_menu(link, task_id):
+def task_menu():
     return kb([
-        [("📢 Подписаться", link)],
-        [("✅ Проверить", f"check_{task_id}"), ("⏭ Пропустить", f"skip_{task_id}")]
+        [("✅ Проверить", "check"), ("⏭ Пропустить", "skip")]
     ])
 
 GIFTS = {
@@ -122,14 +94,8 @@ def run_web_server():
     except Exception as e:
         print("Веб-сервер:", e)
 
-# ================== ЛОГИКА ==================
-def show_task(uid, chat_id):
-    task = subgram_get_task(uid)
-    text = f"📌 Новое задание\n\nПодпишись на канал:\n👉 {task['title']}\n\n💰 Награда: {BASE_REWARD} ⭐\n\n⚠️ Не отписывайся сразу, иначе проверка не пройдет!"
-    send(chat_id, text, task_menu(task['link'], task['id']))
-
 # ================== ЗАПУСК ==================
-print("Бот запущен в режиме Заработка Звезд (SubGram API подключен)!")
+print("Бот запущен (SubGram Real API)!")
 threading.Thread(target=run_web_server, daemon=True).start()
 
 offset = 0
@@ -148,49 +114,58 @@ while True:
                 uid = cb["from"]["id"]
                 chat_id = cb["message"]["chat"]["id"]
                 act = cb["data"]
-
                 user = get_user(uid)
                 balance = float(user.get("balance", 0.0))
 
-                if act == "earn":
-                    answer_cb(cb["id"])
-                    show_task(uid, chat_id)
+                # --- ЗАРАБОТАТЬ / ПРОПУСТИТЬ (запрос нового задания) ---
+                if act == "earn" or act == "skip":
+                    answer_cb(cb["id"], "🔄 Проверяю...")
+                    data = subgram_get_sponsors(uid, chat_id)
+                    status = data.get("status")
 
-                elif act.startswith("check_"):
-                    task_id = act.split("_")[1]
-                    answer_cb(cb["id"], "🔄 Проверяю подписку...")
-                    
-                    if subgram_check_task(uid, task_id):
+                    if status == "ok":
                         update_balance(uid, BASE_REWARD)
-                        user["current_task"] = None
                         send(chat_id, f"✅ Задание выполнено!\n💰 Ты получил {BASE_REWARD} ⭐", main_menu())
+                    elif status == "warning":
+                        send(chat_id, "📌 Подпишись на канал (он пришёл выше) и жми «Проверить»!", task_menu())
                     else:
-                        send(chat_id, "❌ Ты не подписался на канал! Попробуй еще раз.", task_menu(f"https://t.me/test_channel_{task_id}", task_id))
+                        send(chat_id, "😴 Каналов больше нет. Приходи через час!", main_menu())
 
-                elif act.startswith("skip_"):
-                    answer_cb(cb["id"], "⏭ Ищу другое задание...")
-                    user["current_task"] = None
-                    show_task(uid, chat_id)
+                # --- ПРОВЕРИТЬ ПОДПИСКУ ---
+                elif act == "check":
+                    answer_cb(cb["id"], "🔄 Проверяю подписку...")
+                    data = subgram_get_sponsors(uid, chat_id)
+                    status = data.get("status")
 
+                    if status == "ok":
+                        update_balance(uid, BASE_REWARD)
+                        send(chat_id, f"✅ Задание выполнено!\n💰 Ты получил {BASE_REWARD} ⭐", main_menu())
+                    elif status == "warning":
+                        send(chat_id, "❌ Ты не подписался! Подпишись и попробуй снова.", task_menu())
+                    else:
+                        send(chat_id, "😴 Каналов больше нет. Приходи через час!", main_menu())
+
+                # --- МАГАЗИН ---
                 elif act == "spend":
                     answer_cb(cb["id"])
                     rows = []
                     for gift_name, cost in GIFTS.items():
                         rows.append([{"text": f"{gift_name} — {cost}⭐", "callback_data": f"buy_{cost}"}])
                     rows.append([{"text": "⬅ Назад", "callback_data": "back"}])
-                    send(chat_id, f"🎁 Магазин подарков\n\nТвой баланс: {balance:.1f} ⭐\n\nВыбирай подарок, он придет в профиль Telegram!", {"inline_keyboard": rows})
+                    send(chat_id, f"🎁 Магазин\n💰 Баланс: {balance:.1f} ⭐", {"inline_keyboard": rows})
 
                 elif act.startswith("buy_"):
                     cost = float(act.split("_")[1])
                     if balance >= cost:
                         update_balance(uid, -cost)
-                        send(chat_id, f"🎉 Подарок отправлен в твой профиль!\nОстаток: {balance - cost:.1f} ⭐", main_menu())
+                        # ЗАГЛУШКА ДЛЯ ПОДАРКОВ (пока не подключим sendGift)
+                        send(chat_id, f"🎉 Подарок отправлен!\nОстаток: {balance - cost:.1f} ⭐", main_menu())
                     else:
-                        answer_cb(cb["id"], "❌ Не хватает звезд!", True)
+                        answer_cb(cb["id"], "❌ Не хватает звёзд!", True)
 
                 elif act == "profile":
                     answer_cb(cb["id"])
-                    send(chat_id, f"👤 Твой ID: {uid}\n💰 Баланс: {balance:.1f} ⭐\n\nЗарабатывай звезды и покупай подарки!", main_menu())
+                    send(chat_id, f"👤 Твой ID: {uid}\n💰 Баланс: {balance:.1f} ⭐", main_menu())
 
                 elif act == "back":
                     answer_cb(cb["id"])
@@ -205,9 +180,9 @@ while True:
             text = msg.get("text", "")
 
             if text.startswith("/start"):
-                get_user(uid) 
-                send(chat_id, "👋 Привет! Добро пожаловать в Звездный Заработок.\n\nЗдесь ты можешь выполнять задания и получать звезды, которые можно обменять на реальные подарки в твоем профиле Telegram.", main_menu())
+                get_user(uid)
+                send(chat_id, "👋 Привет! Зарабатывай звёзды и покупай подарки.", main_menu())
 
     except Exception as e:
-        print("Ошибка в цикле:", e)
+        print("Ошибка:", e)
         time.sleep(3)
